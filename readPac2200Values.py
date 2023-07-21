@@ -8,6 +8,8 @@ class PAC2200(Structure):
             ("VL2_N", c_float),
             ("VL3_N", c_float),
             ("VL1_VL2", c_float),
+            ("VL2_VL3", c_float),
+            ("VL1_VL3", c_float),
     ]
 
     def __init__(self, *args, **kwargs):
@@ -16,7 +18,7 @@ class PAC2200(Structure):
         self.returnedData = []
 
     def getAllValue(self):
-        self.data = self.Modbus.read_holding_registers(1, 8, unit=1)
+        self.data = self.Modbus.read_holding_registers(1, 12, unit=1)
         self.Modbus.close()
         return self.swapData()
 
