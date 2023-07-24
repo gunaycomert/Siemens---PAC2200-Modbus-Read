@@ -2,28 +2,56 @@ import socket
 from ctypes import *
 from itertools import chain
 import time
+import struct
 
 HOST = "10.59.7.2"
 PORT = 502
 
 class PAC2200(Structure):
-    _fields_ = [
-            ("VL1_N", c_float),
-            ("VL2_N", c_float),
-            ("VL3_N", c_float),
-            ("VL1_VL2", c_float),
-            ("VL2_VL3", c_float),
-            ("VL1_VL3", c_float),
-            ("C_L1", c_float),
-            ("C_L2", c_float),
-            ("C_L3", c_float),
-    ]
 
     def __init__(self, *args, **kwargs):
         super(PAC2200, self).__init__()
         self.transactionIdentifier = 0
         self.protocolIdentifier = 0
         self.messageLength = 6
+        self.tempData = []    
+        self.pacData = {
+                "VL1_N": '',
+                "VL2_N": '',
+                "VL3_N": '',
+                "VL1_VL2": '',
+                "VL2_VL3": '',
+                "VL1_VL3": '',
+                "C_L1": '',
+                "C_L2": '',
+                "C_L3": '',
+                "APP_L1": '',
+                "APP_L2": '',
+                "APP_L3": '',
+                "ACP_L1": '',
+                "ACP_L2": '',
+                "ACP_L3": '',
+                "RP_L1": '',
+                "RP_L2": '',
+                "RP_L3": '',
+                "PF_L1": '',
+                "PF_L2": '',
+                "PF_L3": '',
+                "nanVal_1": '',
+                "nanVal_2": '',
+                "nanVal_3": '',
+                "nanVal_4": '',
+                "nanVal_5": '',
+                "nanVal_6": '',
+                "FREQ": '',
+                "AV_VL1_N": '',
+                "AV_VLL_L": '',
+                "AV_C": '',
+                "T_AP_P": '',
+                "T_AC_P": '',
+                "T_RE_P": '',
+                "T_P_F": '',
+        }
 
     def connect(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -52,36 +80,35 @@ class PAC2200(Structure):
     def getModbusData(self):
         modbus_sock = self.connect()
         try:
-            modbus_sock.send(self.prepareModbusData(1, len(self._fields_) * 2))
+            modbus_sock.send(self.prepareModbusData(1, 70))
             received_data = modbus_sock.recv(1024)
+            floatParts = ["{:02x}".format(byte) for byte in received_data[9:]]
 
-            return ["{:02x}".format(byte) for byte in received_data[9:]]
+            modbus_sock.send(self.prepareModbusData(801, 4))
+            AC_ENG_IMP_T1 = modbus_sock.recv(1024)
+
+            return [floatParts, AC_ENG_IMP_T1]
         except socket.error as exc:
             print(exc)
             raise socket.error("Failed to receive data from the server.")
         finally:
             modbus_sock.close()
 
-    def swap_data(self):
-        getData = self.getModbusData()
-        getData = [getData[i] + getData[i + 1] for i in range(0, len(getData), 2)]
-        getData = [int(x, 16) for x in getData]
-        self.swapped_data = list(chain.from_iterable(zip(getData[1::2], getData[0::2])))
-        for i, field in enumerate(self._fields_):
-            setattr(self, field[0], cast(pointer((c_uint16 * 2)(*self.swapped_data[i * 2:(i * 2) + 2])), POINTER(c_float)).contents.value)
+    def partOfData(self):
+        floatParts, AC_ENG_IMP_T1 = self.getModbusData()
+        for i in range(0, len(floatParts), 4):
+            hex_number = ''.join(floatParts[i:i+4])
+            self.tempData.append(struct.unpack('>f', bytes.fromhex(hex_number))[0])
+        
+        AC_ENG_IMP_T1 = struct.unpack('>d', bytes.fromhex(''.join(["{:02x}".format(byte) for byte in AC_ENG_IMP_T1[9:]])))[0]
+        for i, key in enumerate(self.pacData): self.pacData[key] = self.tempData[i]
 
 if __name__ == "__main__":
     try:
         pac2200 = PAC2200()
-        pac2200.swap_data()
-        print("VL1_N:", pac2200.VL1_N)
-        print("VL2_N:", pac2200.VL2_N)
-        print("VL3_N:", pac2200.VL3_N)
-        print("VL1_VL2:", pac2200.VL1_VL2)
-        print("VL2_VL3:", pac2200.VL2_VL3)
-        print("VL1_VL3:", pac2200.VL1_VL3)
-        print("C_L1:", pac2200.C_L1)
-        print("C_L2:", pac2200.C_L2)
-        print("C_L3:", pac2200.C_L3)
+        pac2200.partOfData()
+        print(pac2200.pacData)
+
+
     except socket.error as e:
         print("Error:", e)
